@@ -49,7 +49,7 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
           REPO_OWNER: ${{ github.repository_owner }}
           UNRAVEL_URL: ${{ secrets.UNRAVEL_URL }}
           UNRAVEL_JWT_TOKEN: ${{ secrets.UNRAVEL_JWT_TOKEN }}
