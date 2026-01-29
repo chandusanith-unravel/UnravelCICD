@@ -32,6 +32,8 @@ def recommend_environment_advanced(query_kpi: dict) -> str:
     if has_ops("scan", "union", "aggregate") and duration > 900 and bytes_read > 2048:
         return "Prefer Photon Compute (long read-heavy pipeline)"
 
+
+
     # --------------------------
     # Serverless-friendly cases
     # --------------------------
