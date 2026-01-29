@@ -34,6 +34,11 @@ def recommend_environment_advanced(query_kpi: dict) -> str:
 
 
 
+
+
+
+
+
     # --------------------------
     # Serverless-friendly cases
     # --------------------------
