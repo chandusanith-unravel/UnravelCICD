@@ -16,7 +16,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # %%
 # DBRKS URL pattern
 pattern = r"^https://adb-([0-9]+).([0-9]+).azuredatabricks.net/\?o=([0-9]+)#job/([0-9]+)/run/([0-9]+)$"
-pattern_as_text = r"https://[^/]+/\?o=([0-9]+)#job/([0-9]+)/run/([0-9]+)"
+pattern_as_text = r"https://adb-([0-9]+).([0-9]+).azuredatabricks.net/\?o=([0-9]+)#job/([0-9]+)/run/([0-9]+)"
 cleanRe = re.compile("<.*?>")
 
 app_summary_map = {}
@@ -604,23 +604,23 @@ def main():
 
         perform_code_review()
 
-        # jira_message = create_jira_message(job_run_result_list)
-        #
-        # jira_link = raise_jira_ticket(jira_message)
-        #
-        # channel = "#cicd-notifications"
-        # # Replace with your Markdown-formatted message
-        # message = "Unravel has insights for the pr number {} which was raised to merge {} from {} to {}. Click this link for further details {}, alos a jira has been raised please find the jira link {}".format(
-        #     pr_number, pr_commit_id, pr_base_branch, pr_target_branch, pr_url, jira_link
-        # )
-        # # Format the user IDs with '@' symbol
-        # user_ids = get_pr_reviewers_list()
-        # formatted_user_ids = ["@" + user_id for user_id in user_ids]
-        #
-        # # Create the message text with user mentions
-        # message_with_mentions = message + " " + " ".join(formatted_user_ids)
-        #
-        # send_markdown_to_slack(channel, message_with_mentions)
+        jira_message = create_jira_message(job_run_result_list)
+
+        jira_link = raise_jira_ticket(jira_message)
+
+        channel = "#cicd-notifications"
+        # Replace with your Markdown-formatted message
+        message = "Unravel has insights for the pr number {} which was raised to merge {} from {} to {}. Click this link for further details {}, alos a jira has been raised please find the jira link {}".format(
+            pr_number, pr_commit_id, pr_base_branch, pr_target_branch, pr_url, jira_link
+        )
+        # Format the user IDs with '@' symbol
+        user_ids = get_pr_reviewers_list()
+        formatted_user_ids = ["@" + user_id for user_id in user_ids]
+
+        # Create the message text with user mentions
+        message_with_mentions = message + " " + " ".join(formatted_user_ids)
+
+        send_markdown_to_slack(channel, message_with_mentions)
 
     else:
         print("Nothing to do without Unravel integration")
