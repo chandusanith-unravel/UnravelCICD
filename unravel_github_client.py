@@ -16,7 +16,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # %%
 # DBRKS URL pattern
 pattern = r"^https://adb-([0-9]+).([0-9]+).azuredatabricks.net/\?o=([0-9]+)#job/([0-9]+)/run/([0-9]+)$"
-pattern_as_text = r"https://adb-([0-9]+).([0-9]+).azuredatabricks.net/\?o=([0-9]+)#job/([0-9]+)/run/([0-9]+)"
+pattern_as_text = r"https://[^/]+/\?o=([0-9]+)#job/([0-9]+)/run/([0-9]+)"
 cleanRe = re.compile("<.*?>")
 
 app_summary_map = {}
