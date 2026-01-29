@@ -1,0 +1,61 @@
+name: Github Unravel Pipeline
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+
+jobs:
+  auto_pr_comments:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Get PR URL
+        id: pr_url
+        run: |
+          pr_number=$(echo ${{ github.ref }} | awk -F'/' '{print $3}')
+          pr_url="https://github.com/${{ github.repository }}/pull/${pr_number}"
+          PR_USER_EMAIL=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+              | jq --raw-output .user.email)
+          COMMIT_SHA=$(jq --raw-output .pull_request.head.sha "$GITHUB_EVENT_PATH")
+          BASE_BRANCH=$(jq --raw-output .pull_request.base.ref "$GITHUB_EVENT_PATH")
+          TARGET_BRANCH=$(jq --raw-output .pull_request.head.ref "$GITHUB_EVENT_PATH")
+
+          echo "PR_USER_EMAIL=$PR_USER_EMAIL" >> $GITHUB_ENV
+          echo "COMMIT_SHA=$COMMIT_SHA" >> $GITHUB_ENV
+          echo "BASE_BRANCH=$BASE_BRANCH" >> $GITHUB_ENV
+          echo "TARGET_BRANCH=$TARGET_BRANCH" >> $GITHUB_ENV
+          echo "PR_URL=${pr_url}" >> $GITHUB_ENV
+
+          
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Install dependencies
+        run: pip install requests jira bs4 Markdown
+
+      - name: Run unravel github client script
+        run: |
+          python unravel_github_client.py
+
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          UNRAVEL_URL: ${{ secrets.UNRAVEL_URL }}
+          UNRAVEL_JWT_TOKEN: ${{ secrets.UNRAVEL_JWT_TOKEN }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          JIRA_DOMAIN: ${{ secrets.JIRA_DOMAIN }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
