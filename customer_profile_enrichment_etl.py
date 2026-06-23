@@ -16,7 +16,7 @@ DEFAULT_CONFIG = {
     "profile_dim_table": "crm_dev_slv.customer_profile_dim",
     "target_table": "crm_dev_gld.customer_profile_enriched",
     "checkpoint_path": "dbfs:/checkpoints/customer_profile_enrichment_etl",
-    "max_files_per_trigger": 12000,
+    "max_files_per_trigger": 600,
     "stateful_dedupe": True,
     "enable_profile_join": True,
 }
