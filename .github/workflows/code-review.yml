@@ -1,0 +1,354 @@
+name: Unravel Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  code-review:
+    name: Unravel Code Review
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout -- full history needed for diff
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------------
+      # 2. Set commit status -> pending
+      # -----------------------------------------------------------------------
+      - name: Set status to pending
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }} \
+            -f state="pending" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f description="Code review in progress..." \
+            -f context="code-review/analysis"
+
+      # -----------------------------------------------------------------------
+      # 3. Extract changed files and diff
+      # -----------------------------------------------------------------------
+      - name: Extract diff and changed files
+        id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+            | grep -v -E '\.(png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|pdf|zip|tar|gz)$' \
+            | head -100 \
+            | jq -R -s 'split("\n") | map(select(length > 0))')
+
+          DIFF=$(git diff "$BASE_SHA" "$HEAD_SHA" \
+            --diff-filter=ACMRT \
+            -- $(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+                  | grep -v -E '\.(png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|pdf|zip|tar|gz)$' \
+                  | head -50) 2>/dev/null || true)
+
+          REPO_TREE=$(find . -type f \
+            -not -path './.git/*' \
+            -not -path './node_modules/*' \
+            -not -path './__pycache__/*' \
+            -not -path './.venv/*' \
+            | sed 's|^\./||' \
+            | head -500 \
+            | jq -R -s 'split("\n") | map(select(length > 0))')
+
+          echo "$CHANGED_FILES" > /tmp/changed_files.json
+          echo "$DIFF"          > /tmp/diff.txt
+          echo "$REPO_TREE"     > /tmp/repo_tree.json
+
+          python3 .github/scripts/extract_notebooks.py "$BASE_SHA" "$HEAD_SHA" \
+            || echo '{}' > /tmp/notebook_cells.json
+
+          python3 .github/scripts/extract_usages.py
+
+          BASE_SHA="$BASE_SHA" HEAD_SHA="$HEAD_SHA" \
+            python3 .github/scripts/extract_full_source.py \
+            || echo "" > /tmp/full_source.txt
+
+          echo "changed_files_count=$(echo "$CHANGED_FILES" | jq 'length')" >> "$GITHUB_OUTPUT"
+          echo "Extracted diff ($(wc -c < /tmp/diff.txt) bytes) for $(echo "$CHANGED_FILES" | jq 'length') file(s)."
+
+      # -----------------------------------------------------------------------
+      # 4. Build request payload & call the review service
+      # -----------------------------------------------------------------------
+      - name: Call Unravel ACM PR Review Agent
+        id: review
+        env:
+          ACM_URL: ${{ secrets.ACM_URL }}
+          ACM_API_KEY: ${{ secrets.ACM_API_KEY }}
+        run: |
+          CHANGED_FILES=$(cat /tmp/changed_files.json)
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          REPO="${{ github.repository }}"
+
+          ACM_BASE=$(echo "$ACM_URL" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/\/*$//')
+
+          if [ -z "$ACM_BASE" ]; then
+            echo "::error::ACM_URL secret is not set! Set it to your ACM platform URL e.g. http://your-acm-host:8080"
+            exit 1
+          fi
+          echo "Calling Unravel ACM at: $ACM_BASE/agents/pr_review_agent/run"
+
+          DIFF=$(cat /tmp/diff.txt)
+          REPO_TREE=$(cat /tmp/repo_tree.json | jq -r 'join("\n")')
+          FULL_SOURCE=$(cat /tmp/full_source.txt 2>/dev/null || echo "")
+          NOTEBOOK_CELLS=$(cat /tmp/notebook_cells.json 2>/dev/null || echo '{}')
+          DEPENDENCY_SOURCES=$(cat /tmp/dependency_sources.json 2>/dev/null || echo '{}')
+          USAGE_SNIPPETS=$(cat /tmp/usage_snippets.txt 2>/dev/null || echo "")
+
+          ACM_PROMPT=$(jq -n \
+            --argjson number        "$PR_NUMBER" \
+            --arg     title         "$PR_TITLE" \
+            --arg     author        "$AUTHOR" \
+            --arg     base_branch   "$BASE_BRANCH" \
+            --arg     head_sha      "$HEAD_SHA" \
+            --arg     repo_name     "$REPO" \
+            --arg     diff          "$DIFF" \
+            --argjson changed_files "$CHANGED_FILES" \
+            --arg     repo_tree     "$REPO_TREE" \
+            --arg     full_source   "$FULL_SOURCE" \
+            --argjson notebook_cells "$NOTEBOOK_CELLS" \
+            --argjson dependency_sources "$DEPENDENCY_SOURCES" \
+            --arg     usage_snippets "$USAGE_SNIPPETS" \
+            '{
+              number:          $number,
+              title:           $title,
+              author:          $author,
+              base_branch:     $base_branch,
+              head_sha:        $head_sha,
+              repo_name:       $repo_name,
+              diff:            $diff,
+              changed_files:   $changed_files,
+              repo_tree:       $repo_tree,
+              full_source:     $full_source,
+              notebook_cells:  $notebook_cells,
+              dependency_sources: $dependency_sources,
+              usage_snippets:  $usage_snippets,
+              job_name:        "",
+              notebook_paths:  []
+            }' | jq -c '.')
+
+          jq -n --arg prompt "$ACM_PROMPT" '{"prompt": $prompt}' > /tmp/acm_payload.json
+          echo "ACM payload size: $(wc -c < /tmp/acm_payload.json) bytes"
+
+          # ACM accepts either Authorization: Bearer <token> or X-API-Key.
+          # Bearer (PAT generated from ACM UI) is preferred; X-API-Key works too.
+          if [ -n "$ACM_API_KEY" ]; then
+            AUTH_HEADER="Authorization: Bearer $ACM_API_KEY"
+          else
+            AUTH_HEADER=""
+          fi
+
+          HTTP_CODE=$(curl -sS \
+            --connect-timeout 60 \
+            --max-time 600 \
+            -X POST \
+            -H "Content-Type: application/json" \
+            ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+            --data-binary @/tmp/acm_payload.json \
+            -o /tmp/acm_response.json \
+            -w "%{http_code}" \
+            "$ACM_BASE/agents/pr_review_agent/run")
+
+          echo "HTTP status: $HTTP_CODE"
+          echo "ACM response: $(cat /tmp/acm_response.json | head -c 500)"
+
+          if [ "$HTTP_CODE" = "202" ]; then
+            # Async submission accepted — poll the poll_url until the run completes.
+            POLL_PATH=$(jq -r '.poll_url // ""' /tmp/acm_response.json)
+            if [ -z "$POLL_PATH" ] || [ "$POLL_PATH" = "null" ]; then
+              echo "::error::ACM returned 202 but no poll_url in response."
+              echo '{"status":"failure","has_critical":false,"pr_blocked":false,"risk_level":"UNKNOWN","summary":"ACM unreachable.","comment_markdown":"## Unravel Code Review\n\n> [!WARNING]\n> Could not reach Unravel ACM (no poll_url).","issues":[]}' \
+                > /tmp/response.json
+              echo "report_html_available=false" >> "$GITHUB_OUTPUT"
+            else
+              POLL_URL="$ACM_BASE$POLL_PATH"
+              echo "Polling for result: $POLL_URL"
+              POLL_STATUS="running"
+              POLL_ATTEMPTS=0
+              MAX_ATTEMPTS=60   # 60 × 10s = 10 minutes max
+              while [ "$POLL_STATUS" = "running" ] || [ "$POLL_STATUS" = "pending" ]; do
+                POLL_ATTEMPTS=$((POLL_ATTEMPTS + 1))
+                if [ "$POLL_ATTEMPTS" -gt "$MAX_ATTEMPTS" ]; then
+                  echo "::error::ACM run timed out after $((MAX_ATTEMPTS * 10))s."
+                  echo '{"status":"failure","has_critical":false,"pr_blocked":false,"risk_level":"UNKNOWN","summary":"ACM timed out.","comment_markdown":"## Unravel Code Review\n\n> [!WARNING]\n> ACM run timed out.","issues":[]}' \
+                    > /tmp/response.json
+                  echo "report_html_available=false" >> "$GITHUB_OUTPUT"
+                  break
+                fi
+                sleep 10
+                POLL_HTTP=$(curl -sS \
+                  --connect-timeout 30 \
+                  --max-time 60 \
+                  ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+                  -o /tmp/acm_poll.json \
+                  -w "%{http_code}" \
+                  "$POLL_URL")
+                POLL_STATUS=$(jq -r '.status // "unknown"' /tmp/acm_poll.json 2>/dev/null || echo "unknown")
+                echo "  attempt $POLL_ATTEMPTS — status: $POLL_STATUS (HTTP $POLL_HTTP)"
+              done
+
+              if [ "$POLL_STATUS" = "completed" ] || [ "$POLL_STATUS" = "failed" ]; then
+                # Both completed and failed may have a usable result/comment to post.
+                cp /tmp/acm_poll.json /tmp/acm_response.json
+                HTTP_CODE="200"
+              fi
+              # Any other status (e.g. timed-out) already wrote /tmp/response.json above.
+            fi
+          fi
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            ACM_BASE="$ACM_BASE" python3 .github/scripts/normalize_acm_response.py
+            if [ -f /tmp/pr_review_report.html ]; then
+              echo "report_html_available=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "report_html_available=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "$HTTP_CODE" != "202" ]; then
+            echo "::error::ACM returned HTTP $HTTP_CODE. Check ACM_URL secret and that pr_review_agent is registered."
+            echo '{"status":"failure","has_critical":false,"pr_blocked":false,"risk_level":"UNKNOWN","summary":"ACM unreachable.","comment_markdown":"## Unravel Code Review\n\n> [!WARNING]\n> Could not reach Unravel ACM.","issues":[]}' \
+              > /tmp/response.json
+            echo "report_html_available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          RESPONSE=$(cat /tmp/response.json)
+          STATUS=$(echo "$RESPONSE"       | jq -r '.status // "failure"')
+          HAS_CRITICAL=$(echo "$RESPONSE" | jq -r '.has_critical // false')
+          SUMMARY=$(echo "$RESPONSE"      | jq -r '.summary // "Analysis unavailable."')
+          COMMENT_MD=$(echo "$RESPONSE"   | jq -r '.comment_markdown // "Review unavailable."')
+          ACM_BASE_FOR_OUTPUT=$(echo "$ACM_BASE" | sed 's|/agents.*||')
+
+          echo "status=$STATUS"                   >> "$GITHUB_OUTPUT"
+          echo "has_critical=$HAS_CRITICAL"       >> "$GITHUB_OUTPUT"
+          echo "summary=$SUMMARY"                 >> "$GITHUB_OUTPUT"
+          echo "base_url=$ACM_BASE_FOR_OUTPUT"    >> "$GITHUB_OUTPUT"
+
+          printf '%s' "$COMMENT_MD" > /tmp/review_comment.md
+
+      # -----------------------------------------------------------------------
+      # 5. Post GitHub Review (overview + inline comments)
+      # -----------------------------------------------------------------------
+      - name: Post review to GitHub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_URL: ${{ steps.review.outputs.base_url }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          REPO="${{ github.repository }}"
+
+          export BASE_URL="$BASE_URL"
+          export PR_NUMBER="$PR_NUMBER"
+          export REPO="$REPO"
+          export HEAD_SHA="$HEAD_SHA"
+          python3 .github/scripts/group_comments.py
+
+          REPORT_URL=$(jq -r '.report_url // ""' /tmp/response.json)
+          if [ -n "$REPORT_URL" ] && [ "$REPORT_URL" != "null" ]; then
+            echo "Updating PR body with ACM report link..."
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              /repos/${{ github.repository }}/pulls/${PR_NUMBER} \
+              --jq '.body // ""' > /tmp/pr_body.txt
+            python3 .github/scripts/update_pr_body.py \
+              /tmp/pr_body.txt /tmp/response.json > /tmp/pr_body_patch.json
+            gh api \
+              --method PATCH \
+              -H "Accept: application/vnd.github+json" \
+              /repos/${{ github.repository }}/pulls/${PR_NUMBER} \
+              --input /tmp/pr_body_patch.json
+          fi
+
+          echo "Posting main PR review comment..."
+          jq -n \
+            --arg body "$(cat /tmp/review_comment.md)" \
+            --arg event "COMMENT" \
+            --arg commit_id "$HEAD_SHA" \
+            '{body: $body, event: $event, commit_id: $commit_id}' > /tmp/review_main.json
+
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews \
+            --input /tmp/review_main.json
+
+          echo "Posting inline comments..."
+          jq -c '.comments[]' /tmp/review_inline.json | while read -r comment; do
+            FILE=$(echo "$comment" | jq -r '.path')
+            LINE=$(echo "$comment" | jq -r '.line')
+            echo "  Posting inline on ${FILE}:${LINE}"
+            if ! gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              /repos/${{ github.repository }}/pulls/${PR_NUMBER}/comments \
+              --input <(echo "$comment") \
+              --silent > /tmp/gh_api_out.json 2>&1; then
+              echo "::warning::Failed inline comment on ${FILE}:${LINE} -- $(cat /tmp/gh_api_out.json)"
+            fi
+          done
+
+          echo "Posting file-level comments..."
+          jq -c '.comments[]' /tmp/review_file_level.json | while read -r comment; do
+            FILE=$(echo "$comment" | jq -r '.path')
+            echo "  Posting file-level on ${FILE}"
+            if ! gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              /repos/${{ github.repository }}/pulls/${PR_NUMBER}/comments \
+              --input <(echo "$comment") \
+              --silent > /tmp/gh_api_out.json 2>&1; then
+              echo "::warning::Failed file-level comment on ${FILE} -- $(cat /tmp/gh_api_out.json)"
+            fi
+          done
+
+      # -----------------------------------------------------------------------
+      # 6. Set final commit status (pass / fail)
+      # -----------------------------------------------------------------------
+      - name: Set final commit status
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STATUS="${{ steps.review.outputs.status }}"
+          HAS_CRITICAL="${{ steps.review.outputs.has_critical }}"
+
+          if [ "$STATUS" = "failure" ] || [ "$HAS_CRITICAL" = "true" ]; then
+            GH_STATE="failure"
+            DESCRIPTION="BLOCKED - Critical issues found. Fix them to enable merge."
+          else
+            GH_STATE="success"
+            DESCRIPTION="No critical issues - safe to merge."
+          fi
+
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }} \
+            -f state="$GH_STATE" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f description="$DESCRIPTION" \
+            -f context="code-review/analysis"
