@@ -1,14 +1,15 @@
 # Unravel Github Integration
 
-The [Unravel Github Integration](.github/workflows/upload-repo-zip-to-databricks.yml) GitHub Action copies a ZIP of this repository to a Unity Catalog volume. It runs only when someone selects **Run workflow** in the GitHub Actions tab.
+The [Unravel Github Integration](.github/workflows/upload-repo-zip-to-databricks.yml) GitHub Action copies a ZIP of a repository to a Unity Catalog volume. It runs only when someone selects **Run workflow** in the GitHub Actions tab. This repository is a tested reference; each customer must install the workflow and configure secrets in their own repository.
 
 For complete setup, operation, troubleshooting, and spaces to add screenshots, use the [editable Word guide](docs/Unravel_Github_Integration_Setup_Guide.docx).
 
-## One-time setup
+## Install in a customer repository
 
-1. Create or choose a Databricks Unity Catalog volume. The Databricks identity behind the token needs permission to write files there.
-2. Open this repository on GitHub, then go to **Settings → Secrets and variables → Actions → New repository secret**.
-3. Add these three repository secrets:
+1. In the customer repository, create `.github/workflows/upload-repo-zip-to-databricks.yml` with the contents of this repository's [workflow YAML](.github/workflows/upload-repo-zip-to-databricks.yml). Commit or merge it into the customer's default branch. No separate script file is needed.
+2. Create or choose a Databricks Unity Catalog volume. The Databricks identity behind the token needs permission to write files there.
+3. Open the **customer repository** on GitHub, then go to **Settings → Secrets and variables → Actions → New repository secret**.
+4. Add these three repository secrets in that customer repository:
 
    | Secret | Value |
    | --- | --- |
@@ -20,7 +21,7 @@ For complete setup, operation, troubleshooting, and spaces to add screenshots, u
 
 ## Run the upload
 
-1. Open **Actions** in this repository.
+1. Open **Actions** in the customer repository.
 2. Select **Unravel Github Integration** in the workflow list.
 3. Select **Run workflow**, choose the branch to archive, and select the green **Run workflow** button.
 4. Open the new run and wait for the `upload` job to complete. The job summary displays the ZIP filename on success.
@@ -41,4 +42,8 @@ For complete setup, operation, troubleshooting, and spaces to add screenshots, u
 
 If the upload fails, check that all three secrets exist, the URL is a workspace URL, the token is valid, and its identity can write to the configured volume. The workflow reports an invalid volume path before attempting the copy.
 
-References: [GitHub manual workflow runs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow) and [Databricks CLI file-system commands](https://docs.databricks.com/aws/en/dev-tools/cli/reference/fs-commands).
+## Manual browser alternative
+
+If the customer cannot install or run the workflow, open their repository's **Code** tab, choose the intended branch, then select **Code → Download ZIP**. In Azure Databricks, open **Catalog**, browse to the target catalog, schema, and volume, and select **Upload to this volume**. Choose the downloaded ZIP and its destination directory, complete the upload, then confirm the ZIP appears in the volume with a nonzero size. This browser route requires GitHub read access and Databricks volume write access, but no GitHub Actions workflow or secrets. Repeat it for each new snapshot. The [Word guide](docs/Unravel_Github_Integration_Setup_Guide.docx) has every step and screenshot placeholders.
+
+References: [GitHub manual workflow runs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow), [GitHub source ZIP downloads](https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives), and [Databricks volume file uploads](https://learn.microsoft.com/en-us/azure/databricks/ingestion/file-upload/upload-to-volume).
