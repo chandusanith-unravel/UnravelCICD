@@ -1,12 +1,12 @@
 # Unravel Github Integration
 
-The [Unravel Github Integration](.github/workflows/upload-repo-zip-to-databricks.yml) GitHub Action copies a ZIP of a repository to a Unity Catalog volume. It runs only when someone selects **Run workflow** in the GitHub Actions tab. This repository is a tested reference; each customer must install the workflow and configure secrets in their own repository.
+The [Unravel Github Integration](.github/workflows/upload-repo-zip-to-databricks.yml) GitHub Action copies a ZIP of a repository to a Unity Catalog volume. It runs only when someone selects **Run workflow** in the GitHub Actions tab. Give customers the YAML file and the setup guide so they can install it in their own repository.
 
 For complete setup, operation, troubleshooting, and spaces to add screenshots, use the [editable Word guide](docs/Unravel_Github_Integration_Setup_Guide.docx).
 
 ## Install in a customer repository
 
-1. In the customer repository, create `.github/workflows/upload-repo-zip-to-databricks.yml` with the contents of this repository's [workflow YAML](.github/workflows/upload-repo-zip-to-databricks.yml). Commit or merge it into the customer's default branch. No separate script file is needed.
+1. In the customer repository, create `.github/workflows/upload-repo-zip-to-databricks.yml` with the contents of the [supplied workflow YAML](.github/workflows/upload-repo-zip-to-databricks.yml). Commit or merge it into the customer's default branch. No separate script file is needed.
 2. Create or choose a Databricks Unity Catalog volume. The Databricks identity behind the token needs permission to write files there.
 3. Open the **customer repository** on GitHub, then go to **Settings → Secrets and variables → Actions → New repository secret**.
 4. Add these three repository secrets in that customer repository:
@@ -30,7 +30,7 @@ For complete setup, operation, troubleshooting, and spaces to add screenshots, u
 
 1. Checks out the selected commit.
 2. Installs the Databricks CLI.
-3. Runs `git archive` to ZIP every tracked file at that commit. The ZIP contains repository content, including this document and the workflow, but not the `.git` history or untracked runner files.
+3. Runs `git archive` to ZIP every tracked file at that commit. The ZIP contains committed repository content, including the workflow file, but not the `.git` history or untracked runner files.
 4. Accepts either `/Volumes/...` or `dbfs:/Volumes/...` for `DBX_VOLUME_PATH` and checks that catalog, schema, and volume names are present.
 5. Creates the destination folder if needed, then copies the ZIP into it with the Databricks CLI. A run produces a name in the form `<repository>-<commit>-<run-id>-<attempt>.zip`.
 
