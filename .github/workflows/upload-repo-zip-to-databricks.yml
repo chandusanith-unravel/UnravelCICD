@@ -48,5 +48,6 @@ jobs:
             exit 1
           fi
 
+          databricks fs mkdir "$destination"
           databricks fs cp "$RUNNER_TEMP/$ARCHIVE_NAME" "$destination/$ARCHIVE_NAME" --overwrite
           echo "Uploaded $ARCHIVE_NAME to the Databricks volume." >> "$GITHUB_STEP_SUMMARY"
