@@ -2,6 +2,8 @@
 
 The [Unravel Github Integration](.github/workflows/upload-repo-zip-to-databricks.yml) GitHub Action copies a ZIP of this repository to a Unity Catalog volume. It runs only when someone selects **Run workflow** in the GitHub Actions tab.
 
+For complete setup, operation, troubleshooting, and spaces to add screenshots, use the [editable Word guide](docs/Unravel_Github_Integration_Setup_Guide.docx).
+
 ## One-time setup
 
 1. Create or choose a Databricks Unity Catalog volume. The Databricks identity behind the token needs permission to write files there.
