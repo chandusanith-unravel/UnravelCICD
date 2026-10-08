@@ -1,4 +1,4 @@
-name: Upload repository ZIP to Databricks volume
+name: Unravel Github Integration
 
 on:
   workflow_dispatch:

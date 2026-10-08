@@ -1,6 +1,6 @@
-# Manual repository ZIP upload to Databricks
+# Unravel Github Integration
 
-The [Upload repository ZIP to Databricks volume](.github/workflows/upload-repo-zip-to-databricks.yml) GitHub Action copies a ZIP of this repository to a Unity Catalog volume. It runs only when someone selects **Run workflow** in the GitHub Actions tab.
+The [Unravel Github Integration](.github/workflows/upload-repo-zip-to-databricks.yml) GitHub Action copies a ZIP of this repository to a Unity Catalog volume. It runs only when someone selects **Run workflow** in the GitHub Actions tab.
 
 ## One-time setup
 
@@ -19,7 +19,7 @@ The [Upload repository ZIP to Databricks volume](.github/workflows/upload-repo-z
 ## Run the upload
 
 1. Open **Actions** in this repository.
-2. Select **Upload repository ZIP to Databricks volume** in the workflow list.
+2. Select **Unravel Github Integration** in the workflow list.
 3. Select **Run workflow**, choose the branch to archive, and select the green **Run workflow** button.
 4. Open the new run and wait for the `upload` job to complete. The job summary displays the ZIP filename on success.
 
