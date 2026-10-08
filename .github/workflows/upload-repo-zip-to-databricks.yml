@@ -1,0 +1,52 @@
+name: Upload repository ZIP to Databricks volume
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@v0.299.2
+
+      - name: Zip repository
+        id: archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_name="${GITHUB_REPOSITORY##*/}-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.zip"
+          git archive --format=zip --output="$RUNNER_TEMP/$archive_name" HEAD
+          echo "name=$archive_name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload ZIP to volume
+        shell: bash
+        env:
+          DATABRICKS_HOST: ${{ secrets.DBX_URL }}
+          DATABRICKS_TOKEN: ${{ secrets.DBX_TOKEN }}
+          VOLUME_PATH: ${{ secrets.DBX_VOLUME_PATH }}
+          ARCHIVE_NAME: ${{ steps.archive.outputs.name }}
+        run: |
+          set -euo pipefail
+          : "${DATABRICKS_HOST:?Set the DBX_URL repository secret to your Databricks workspace URL}"
+          : "${DATABRICKS_TOKEN:?Set the DBX_TOKEN repository secret to a Databricks access token}"
+          : "${VOLUME_PATH:?Set the DBX_VOLUME_PATH repository secret to a Unity Catalog volume directory}"
+
+          case "$VOLUME_PATH" in
+            dbfs:/Volumes/*) destination="${VOLUME_PATH%/}" ;;
+            /Volumes/*) destination="dbfs:${VOLUME_PATH%/}" ;;
+            *) echo "::error::DBX_VOLUME_PATH must start with /Volumes/ or dbfs:/Volumes/"; exit 1 ;;
+          esac
+          if [[ ! "$destination" =~ ^dbfs:/Volumes/[^/]+/[^/]+/[^/]+(/.*)?$ ]]; then
+            echo "::error::DBX_VOLUME_PATH must include catalog, schema, and volume names"
+            exit 1
+          fi
+
+          databricks fs cp "$RUNNER_TEMP/$ARCHIVE_NAME" "$destination/$ARCHIVE_NAME" --overwrite
+          echo "Uploaded $ARCHIVE_NAME to the Databricks volume." >> "$GITHUB_STEP_SUMMARY"
